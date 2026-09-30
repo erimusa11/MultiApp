@@ -1,6 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.INTERNET" />
+    <!--
+      SECURITY: release builds have NO internet permission (it is added only in
+      src/debug for Metro). Even if something went wrong, Multi-App cannot send
+      data anywhere.
+    -->
+    <!-- Only apps signed with the Multi-App key may drive the Clone Space. -->
+    <permission
+        android:name="com.eri.multiapp.permission.CONTROL_SPACE"
+        android:protectionLevel="signature" />
+    <uses-permission android:name="com.eri.multiapp.permission.CONTROL_SPACE" />
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
 
@@ -21,6 +31,8 @@
       android:icon="@mipmap/ic_launcher"
       android:roundIcon="@mipmap/ic_launcher_round"
       android:allowBackup="false"
+      android:fullBackupContent="false"
+      android:dataExtractionRules="@xml/data_extraction_rules"
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
       android:supportsRtl="true">
@@ -91,6 +103,7 @@
       <activity
         android:name=".space.ProfileActionActivity"
         android:enabled="false"
+        android:permission="com.eri.multiapp.permission.CONTROL_SPACE"
         android:theme="@style/Transparent"
         android:excludeFromRecents="true"
         android:exported="true">
@@ -106,13 +119,14 @@
         </intent-filter>
       </activity>
 
-      <!-- Target of home-screen shortcuts for clones. -->
+      <!-- Target of home-screen shortcuts. NOT exported: launchers start pinned
+           shortcuts on our behalf, other apps cannot reach it. -->
       <activity
         android:name=".space.CloneLauncherActivity"
         android:theme="@style/Transparent"
         android:excludeFromRecents="true"
         android:taskAffinity=""
         android:noHistory="true"
-        android:exported="true" />
+        android:exported="false" />
     </application>
 </manifest>

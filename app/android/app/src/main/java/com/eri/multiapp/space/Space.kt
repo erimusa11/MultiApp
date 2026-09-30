@@ -49,7 +49,16 @@ object Space {
     const val EXTRA_PACKAGE = "com.eri.multiapp.extra.PACKAGE"
     const val EXTRA_ERROR = "com.eri.multiapp.extra.ERROR"
 
-    fun admin(ctx: Context) = ComponentName(ctx, MultiAppAdminReceiver::class.java)
+    private val PACKAGE_NAME = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$")
+
+    /** SECURITY: every package name crossing a boundary is validated first. */
+    fun isValidPackageName(pkg: String?): Boolean =
+        pkg != null && pkg.length <= 255 && PACKAGE_NAME.matches(pkg)
+
+    const val PREFS_SECURITY = "multiapp_security"
+    const val KEY_SECURE_SCREEN = "secure_screen"
+
+    fun admin(ctx: Context) =ComponentName(ctx, MultiAppAdminReceiver::class.java)
 
     fun dpm(ctx: Context): DevicePolicyManager =
         ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
@@ -120,8 +129,11 @@ object Space {
     /** "none" | "ready" | "paused" | "foreign" */
     fun state(ctx: Context): String {
         val user = spaceUser(ctx) ?: return "none"
-        val ours = isForwardingReady(ctx) ||
+        val ours = isForwardingReady(ctx) || try {
             launcherApps(ctx).getActivityList(ctx.packageName, user).isNotEmpty()
+        } catch (e: Exception) {
+            false
+        }
         if (!ours) return "foreign"
         return if (userManager(ctx).isQuietModeEnabled(user)) "paused" else "ready"
     }
@@ -151,6 +163,7 @@ object Space {
 
     /** Launches the clone of [pkg]. Returns false when it isn't launchable from here. */
     fun launchDirect(ctx: Context, pkg: String): Boolean {
+        if (!isValidPackageName(pkg) || pkg == ctx.packageName) return false
         val user = spaceUser(ctx) ?: return false
         val la = launcherApps(ctx)
         return try {

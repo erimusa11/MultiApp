@@ -9,7 +9,7 @@ class CloneLauncherActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val pkg = intent.getStringExtra(Space.EXTRA_PACKAGE)
-        if (pkg == null) {
+        if (!Space.isValidPackageName(pkg) || pkg == null || pkg == packageName) {
             finish()
             return
         }

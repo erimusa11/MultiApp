@@ -7,35 +7,46 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState, StatusBar } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { ToastProvider, useToast } from './src/components/UI';
-import { errorMessage, InstalledApp, Space, SpaceStatus } from './src/native';
-import { CloneMap, CloneMeta, loadClones, saveClones } from './src/store';
-import { cloneColors, popularPackages } from './src/theme';
+import { haptic, ToastProvider, useToast } from './src/components/UI';
+import { errorMessage, InstalledApp, SecurityInfo, Space, SpaceStatus } from './src/native';
+import { CloneMap, CloneMeta, defaultSettings, loadStore, saveStore, Settings } from './src/store';
+import { cloneColors, popularPackages, ThemePref, ThemeProvider, useTheme } from './src/theme';
 import { Welcome } from './src/screens/Welcome';
 import { CloneView, Home } from './src/screens/Home';
 import { AppPickerSheet, CloneSheet, SettingsSheet } from './src/screens/Sheets';
 import { CloningOverlay, CloningState } from './src/screens/CloningOverlay';
-import { InfoScreen, InsideSpaceScreen } from './src/screens/InfoScreen';
+import { InfoScreen, InsideSpaceScreen, LockScreen } from './src/screens/InfoScreen';
 
 const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+/** Re-lock after Multi-App has been in the background this long. */
+const LOCK_AFTER_MS = 15_000;
+/** Freshly cloned apps can take a moment to show up in the Space listing. */
+const NEW_CLONE_GRACE_MS = 30_000;
 
 export default function App() {
   return (
     <SafeAreaProvider>
-      <StatusBar barStyle="dark-content" />
-      <ToastProvider>
-        <Main />
-      </ToastProvider>
+      <ThemeProvider>
+        <ToastProvider>
+          <Main />
+        </ToastProvider>
+      </ThemeProvider>
     </SafeAreaProvider>
   );
 }
 
 function Main() {
   const toast = useToast();
+  const { t, setPref } = useTheme();
+  const [loaded, setLoaded] = useState(false);
   const [status, setStatus] = useState<SpaceStatus | null>(null);
+  const [security, setSecurity] = useState<SecurityInfo | null>(null);
   const [apps, setApps] = useState<InstalledApp[]>([]);
   const [appsLoading, setAppsLoading] = useState(true);
   const [clones, setClonesState] = useState<CloneMap>({});
+  const [settings, setSettingsState] = useState<Settings>(defaultSettings);
+  const [locked, setLocked] = useState(false);
+  const [unlocking, setUnlocking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [finishing, setFinishing] = useState(false);
@@ -46,14 +57,34 @@ function Main() {
   const [lastCloned, setLastCloned] = useState<string | null>(null);
 
   const clonesRef = useRef<CloneMap>({});
+  const settingsRef = useRef<Settings>(defaultSettings);
   const appsRef = useRef<InstalledApp[]>([]);
+  /** >0 while Multi-App itself opened a system screen (auth, Space action…). */
+  const suppressLock = useRef(0);
+  const backgroundAt = useRef<number | null>(null);
   const busy = useRef(false);
 
-  const setClones = useCallback((next: CloneMap) => {
-    clonesRef.current = next;
-    setClonesState(next);
-    saveClones(next).catch(() => {});
+  const persist = useCallback(() => {
+    saveStore({ clones: clonesRef.current, settings: settingsRef.current }).catch(() => {});
   }, []);
+
+  const setClones = useCallback(
+    (next: CloneMap) => {
+      clonesRef.current = next;
+      setClonesState(next);
+      persist();
+    },
+    [persist],
+  );
+
+  const setSettings = useCallback(
+    (patch: Partial<Settings>) => {
+      settingsRef.current = { ...settingsRef.current, ...patch };
+      setSettingsState(settingsRef.current);
+      persist();
+    },
+    [persist],
+  );
 
   const updateClone = useCallback(
     (pkg: string, patch: Partial<CloneMeta>) => {
@@ -65,17 +96,48 @@ function Main() {
     [setClones],
   );
 
+  /** Runs a step that opens a system screen without triggering App lock on return. */
+  const withoutLock = useCallback(async <T,>(fn: () => Promise<T>): Promise<T> => {
+    suppressLock.current++;
+    try {
+      return await fn();
+    } finally {
+      setTimeout(() => {
+        suppressLock.current = Math.max(0, suppressLock.current - 1);
+      }, 800);
+    }
+  }, []);
+
+  /** When App lock is on, sensitive actions need a fresh fingerprint / PIN. */
+  const confirmIdentity = useCallback(
+    async (reason: string) => {
+      if (!settingsRef.current.appLock) {
+        return true;
+      }
+      const r = await withoutLock(() => Space.authenticate('Confirm it’s you', reason));
+      if (r === 'success' || r === 'unavailable') {
+        return true;
+      }
+      if (r === 'lockout') {
+        toast('Too many attempts. Try again later.', 'error');
+      }
+      return false;
+    },
+    [toast, withoutLock],
+  );
+
   /** Aligns our saved clone list with what really lives in the Space. */
   const reconcile = useCallback(
     (spacePkgs: string[], state: SpaceStatus['state']) => {
       const inSpace = new Set(spacePkgs);
       const next: CloneMap = {};
       let changed = false;
+      const now = Date.now();
       for (const c of Object.values(clonesRef.current)) {
         if (inSpace.has(c.packageName)) {
           next[c.packageName] = c.sleeping ? { ...c, sleeping: false } : c;
           changed = changed || c.sleeping;
-        } else if (c.sleeping || state !== 'ready') {
+        } else if (c.sleeping || state !== 'ready' || now - c.createdAt < NEW_CLONE_GRACE_MS) {
           next[c.packageName] = c;
         } else {
           changed = true; // removed from outside Multi-App
@@ -91,7 +153,7 @@ function Main() {
               name: app.label,
               color: cloneColors[Object.keys(next).length % cloneColors.length],
               sleeping: false,
-              createdAt: Date.now(),
+              createdAt: now,
             };
             changed = true;
           }
@@ -130,28 +192,114 @@ function Main() {
     }
   }, [toast]);
 
+  const refreshSecurity = useCallback(() => {
+    Space.getSecurityInfo().then(setSecurity).catch(() => {});
+  }, []);
+
+  // ---------- Boot ----------
+
   useEffect(() => {
     (async () => {
-      clonesRef.current = await loadClones();
-      setClonesState(clonesRef.current);
+      const data = await loadStore();
+      clonesRef.current = data.clones;
+      settingsRef.current = data.settings;
+      setClonesState(data.clones);
+      setSettingsState(data.settings);
+      setPref(data.settings.theme);
+      setLocked(data.settings.appLock);
+      Space.setSecureScreen(data.settings.secureScreen).catch(() => {});
+      setLoaded(true);
+      refreshSecurity();
       await refresh();
       await loadApps();
       await refresh();
     })();
-    const sub = AppState.addEventListener('change', s => {
-      if (s === 'active') {
+  }, [refresh, loadApps, refreshSecurity, setPref]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', next => {
+      if (next === 'background') {
+        backgroundAt.current = suppressLock.current > 0 ? null : Date.now();
+      } else if (next === 'active') {
+        const away = backgroundAt.current;
+        backgroundAt.current = null;
+        if (settingsRef.current.appLock && away && Date.now() - away > LOCK_AFTER_MS) {
+          setLocked(true);
+          setPickerOpen(false);
+          setSettingsOpen(false);
+          setManagePkg(null);
+        }
         refresh();
+        refreshSecurity();
       }
     });
     return () => sub.remove();
-  }, [refresh, loadApps]);
+  }, [refresh, refreshSecurity]);
 
-  // ---------- Actions ----------
+  // ---------- Lock ----------
+
+  const unlock = useCallback(async () => {
+    setUnlocking(true);
+    const r = await withoutLock(() => Space.authenticate('Unlock Multi-App', 'Confirm it’s you to see your clones'));
+    setUnlocking(false);
+    if (r === 'success') {
+      haptic('success');
+      setLocked(false);
+    } else if (r === 'unavailable') {
+      // The phone no longer has a screen lock, so App lock can't be enforced.
+      setLocked(false);
+      setSettings({ appLock: false });
+      toast('No screen lock on this phone — App lock turned off', 'error');
+    } else if (r === 'lockout') {
+      toast('Too many attempts. Try again later.', 'error');
+    }
+  }, [setSettings, toast, withoutLock]);
+
+  const autoPrompted = useRef(false);
+  useEffect(() => {
+    if (!locked) {
+      autoPrompted.current = false;
+    } else if (!autoPrompted.current && AppState.currentState === 'active') {
+      autoPrompted.current = true;
+      unlock();
+    }
+  }, [locked, unlock]);
+
+  const toggleLock = async (on: boolean) => {
+    if (on) {
+      const r = await withoutLock(() => Space.authenticate('Turn on App lock', 'Confirm it’s you'));
+      if (r === 'success') {
+        setSettings({ appLock: true, secureScreen: true });
+        Space.setSecureScreen(true).catch(() => {});
+        toast('App lock is on 🔒', 'success');
+      } else if (r === 'unavailable') {
+        toast('Set a PIN, pattern or fingerprint in Android settings first', 'error');
+      }
+    } else if (await confirmIdentity('Turn off App lock')) {
+      setSettings({ appLock: false });
+      toast('App lock is off');
+    }
+  };
+
+  const toggleSecureScreen = async (on: boolean) => {
+    if (!on && !(await confirmIdentity('Show Multi-App in screenshots'))) {
+      return;
+    }
+    setSettings({ secureScreen: on });
+    await Space.setSecureScreen(on).catch(() => {});
+  };
+
+  const changeTheme = (p: ThemePref) => {
+    setPref(p);
+    setSettings({ theme: p });
+  };
+
+  // ---------- Clone actions ----------
 
   const createSpace = async () => {
     setCreating(true);
     try {
-      const ok = await Space.createSpace();
+      const ok = await withoutLock(() => Space.createSpace());
       if (!ok) {
         toast('Setup was cancelled');
         return;
@@ -160,6 +308,7 @@ function Main() {
       for (let i = 0; i < 25; i++) {
         const st = await refresh();
         if (st && (st.state === 'ready' || st.state === 'paused')) {
+          haptic('success');
           toast('Your Clone Space is ready ✨', 'success');
           setPickerOpen(true);
           break;
@@ -186,8 +335,8 @@ function Main() {
     busy.current = true;
     const started = Date.now();
     try {
-      await Space.cloneApp(app.packageName);
-      await wait(Math.max(0, 1500 - (Date.now() - started)));
+      await withoutLock(() => Space.cloneApp(app.packageName));
+      await wait(Math.max(0, 1600 - (Date.now() - started)));
       const name = `${app.label} 2`;
       setClones({
         ...clonesRef.current,
@@ -211,24 +360,24 @@ function Main() {
   };
 
   const openClone = async (c: CloneMeta) => {
+    busy.current = true;
     try {
       if (c.sleeping) {
-        busy.current = true;
-        await Space.unfreezeClone(c.packageName);
+        await withoutLock(() => Space.unfreezeClone(c.packageName));
         updateClone(c.packageName, { sleeping: false });
-        busy.current = false;
         await wait(300);
       }
       await Space.launchClone(c.packageName);
     } catch (e) {
-      busy.current = false;
       toast(errorMessage(e), 'error');
+    } finally {
+      busy.current = false;
     }
   };
 
   const pinShortcut = async (c: CloneMeta) => {
     try {
-      const ok = await Space.pinShortcut(c.packageName, c.name, c.color);
+      const ok = await withoutLock(() => Space.pinShortcut(c.packageName, c.name, c.color));
       toast(ok ? 'Confirm to add it to your home screen' : 'Your launcher doesn’t support shortcuts', ok ? 'success' : 'error');
     } catch (e) {
       toast(errorMessage(e), 'error');
@@ -239,11 +388,11 @@ function Main() {
     busy.current = true;
     try {
       if (c.sleeping) {
-        await Space.unfreezeClone(c.packageName);
+        await withoutLock(() => Space.unfreezeClone(c.packageName));
         updateClone(c.packageName, { sleeping: false });
         toast(`${c.name} is awake`, 'success');
       } else {
-        await Space.freezeClone(c.packageName);
+        await withoutLock(() => Space.freezeClone(c.packageName));
         updateClone(c.packageName, { sleeping: true });
         toast(`${c.name} is sleeping 💤`, 'success');
       }
@@ -255,10 +404,13 @@ function Main() {
   };
 
   const removeClone = async (c: CloneMeta) => {
+    if (!(await confirmIdentity(`Remove ${c.name}`))) {
+      return;
+    }
     setManagePkg(null);
     busy.current = true;
     try {
-      await Space.removeClone(c.packageName);
+      await withoutLock(() => Space.removeClone(c.packageName));
       const next = { ...clonesRef.current };
       delete next[c.packageName];
       setClones(next);
@@ -271,9 +423,12 @@ function Main() {
   };
 
   const destroySpace = async () => {
+    if (!(await confirmIdentity('Delete your Clone Space'))) {
+      return;
+    }
     setSettingsOpen(false);
     try {
-      await Space.destroySpace();
+      await withoutLock(() => Space.destroySpace());
       setClones({});
       toast('Clone Space deleted');
       for (let i = 0; i < 10; i++) {
@@ -291,7 +446,7 @@ function Main() {
   const resume = async () => {
     const ok = await Space.unpauseSpace();
     if (!ok) {
-      toast('Turn on “Work apps” from your quick settings', 'info');
+      toast('Turn on “Work apps” from your quick settings');
     }
     setTimeout(refresh, 800);
   };
@@ -320,11 +475,19 @@ function Main() {
 
   // ---------- Screens ----------
 
-  if (!status) {
+  if (!loaded || !status) {
     return <InfoScreen loading />;
   }
   if (status.insideSpace) {
     return <InsideSpaceScreen />;
+  }
+  if (locked) {
+    return (
+      <>
+        <StatusBar barStyle="light-content" />
+        <LockScreen onUnlock={unlock} busy={unlocking} />
+      </>
+    );
   }
   if (!status.supported) {
     return (
@@ -345,15 +508,22 @@ function Main() {
     );
   }
   if (status.state === 'none') {
-    return <Welcome onCreate={createSpace} creating={creating} finishing={finishing} />;
+    return (
+      <>
+        <StatusBar barStyle="light-content" />
+        <Welcome onCreate={createSpace} creating={creating} finishing={finishing} />
+      </>
+    );
   }
 
   return (
     <>
+      <StatusBar barStyle={t.dark ? 'light-content' : 'dark-content'} />
       <Home
         clones={cloneViews}
         state={status.state}
         refreshing={refreshing}
+        protectedMode={settings.appLock}
         onRefresh={async () => {
           setRefreshing(true);
           await Promise.all([refresh(), loadApps()]);
@@ -366,7 +536,10 @@ function Main() {
           loadApps();
         }}
         onQuickClone={quickClone}
-        onSettings={() => setSettingsOpen(true)}
+        onSettings={() => {
+          refreshSecurity();
+          setSettingsOpen(true);
+        }}
         onResume={resume}
         suggestions={suggestions}
       />
@@ -381,23 +554,26 @@ function Main() {
       <CloneSheet
         clone={managed}
         onClose={() => setManagePkg(null)}
-        onRename={name => managed && updateClone(managed.packageName, { name })}
-        onColor={color => managed && updateClone(managed.packageName, { color })}
-        onOpen={() => {
-          if (managed) {
-            setManagePkg(null);
-            openClone(managed);
-          }
+        onRename={(pkg, name) => updateClone(pkg, { name })}
+        onColor={(pkg, color) => updateClone(pkg, { color })}
+        onOpen={c => {
+          setManagePkg(null);
+          openClone(c);
         }}
-        onShortcut={() => managed && pinShortcut(managed)}
-        onToggleSleep={() => managed && toggleSleep(managed)}
-        onSettings={() => managed && Space.openCloneSettings(managed.packageName)}
-        onRemove={() => managed && removeClone(managed)}
+        onShortcut={pinShortcut}
+        onToggleSleep={toggleSleep}
+        onSettings={c => withoutLock(() => Space.openCloneSettings(c.packageName))}
+        onRemove={removeClone}
       />
       <SettingsSheet
         visible={settingsOpen}
         onClose={() => setSettingsOpen(false)}
         status={status}
+        security={security}
+        settings={settings}
+        onToggleLock={toggleLock}
+        onToggleSecureScreen={toggleSecureScreen}
+        onTheme={changeTheme}
         onDestroy={destroySpace}
       />
       <CloningOverlay
@@ -414,4 +590,3 @@ function Main() {
     </>
   );
 }
-

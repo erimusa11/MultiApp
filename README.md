@@ -19,6 +19,9 @@ Each clone is a **real, separate install** with its own login, chats, files and 
 - **Home-screen shortcuts.** Each shortcut shows the app icon with your colored "twin" badge.
 - **Sleep mode.** Freeze a clone so it doesn't run in the background or send notifications, and wake it whenever you want.
 - **Permissions & storage.** Jump straight to Android's settings for any clone.
+- **App lock.** Fingerprint, face or PIN to open Multi-App. A fresh check is also required before removing a clone or deleting the Space.
+- **Hide content.** Blocks screenshots, screen recording and the recent-apps preview.
+- **Light and dark mode.** Follows the system, or you can choose one yourself.
 - **Private by design.** Everything stays on the device. Multi-App has no servers, accounts or tracking.
 - **Adaptive and themed launcher icons**, generated from the Multi-App logo.
 
@@ -43,6 +46,24 @@ Other cloner apps use "virtual engines" instead. Those hook into Android interna
 | "Work apps" toggle | If the user pauses work apps from quick settings, clones pause too. Multi-App shows a **Resume** button. |
 | Some OEM ROMs | A few heavily modified ROMs (some Xiaomi/MIUI builds) restrict work profiles. They have their own built-in "Dual apps" feature. |
 
+## Security
+
+Multi-App holds admin rights over the Clone Space, so it is hardened against being abused as a backdoor:
+
+| Protection | What it does |
+|---|---|
+| **Signature-locked control** | The component that performs clone, sleep, remove and wipe actions is protected by a `signature` permission **and** checks who called it. Only Multi-App, signed with your key, can use it. Other apps get "Not allowed", and that includes apps cloned into the Space. |
+| **Nothing else exposed** | The shortcut launcher is not exported. Provisioning screens need `BIND_DEVICE_ADMIN`, which only Android itself holds. The one exception only re-runs setup inside the Space and does nothing anywhere else. |
+| **Input validation** | Every package name is checked against a strict pattern. Actions on Multi-App's own package are refused, so the Space owner can't be hidden or removed. |
+| **No intent redirection** | Only the system uninstall prompt is relaunched, with URI grant flags removed. |
+| **Offline release builds** | Release builds have **no internet permission**. Even a bug couldn't send data anywhere. (Debug builds keep internet for the Metro bundler only.) |
+| **Minimal admin rights** | Admin rights apply only inside the Clone Space. The device-admin policy list is empty, so there's no control over your personal apps, data or passwords. |
+| **No backups or transfer** | `allowBackup=false` plus data-extraction rules keep Multi-App data out of the cloud and off device-to-device copies. |
+| **App lock and Hide content** | Biometric or PIN lock (it re-locks after 15 seconds in the background), `FLAG_SECURE`, and a fresh check before destructive actions. |
+| **Tapjacking protection** | Taps are ignored while another app draws over Multi-App. |
+| **Hardened build** | R8 shrinking and obfuscation, and debug logs are stripped from release builds. |
+| **Safe storage** | Saved settings are validated on load, so a corrupted or tampered file can't crash the app or inject bad data. |
+
 ## Requirements
 
 - Node.js ≥ 22.11
@@ -65,7 +86,22 @@ cd app/android
 ./gradlew assembleRelease         # output: app/build/outputs/apk/release/app-release.apk
 ```
 
-> ⚠️ The release build is currently signed with the debug keystore. Create your own keystore before publishing. See the [React Native signing guide](https://reactnative.dev/docs/signed-apk-android).
+### Signing with your own key (required before sharing the app)
+
+Multi-App trusts only apps signed with **its own key**, so that key must stay private. Without it, Gradle falls back to React Native's public debug key, which anyone can use. Never share an APK built that way.
+
+1. Create a key once, and keep the file and its passwords safe:
+   ```bash
+   keytool -genkeypair -v -keystore multiapp-release.keystore -alias multiapp -keyalg RSA -keysize 4096 -validity 10000
+   ```
+2. Add these lines to `~/.gradle/gradle.properties`. This is your user folder, **not** the repo:
+   ```properties
+   MULTIAPP_STORE_FILE=C:/path/to/multiapp-release.keystore
+   MULTIAPP_STORE_PASSWORD=********
+   MULTIAPP_KEY_ALIAS=multiapp
+   MULTIAPP_KEY_PASSWORD=********
+   ```
+3. Run `./gradlew assembleRelease`. The build now signs the APK with your key and shrinks and obfuscates it with R8.
 
 ### Regenerating the icons
 
@@ -83,12 +119,12 @@ app/
 ├── App.tsx               App state, clone lifecycle, screen routing
 ├── src/
 │   ├── native.ts         Typed bridge to the Kotlin module
-│   ├── store.ts          Clone names / colors / sleep state (SharedPreferences)
-│   ├── theme.ts          Brand colors, clone color tags, popular apps
-│   ├── components/       Glyph icons, buttons, bottom sheet, toasts
-│   └── screens/          Welcome, Home, Sheets (picker/clone/settings), CloningOverlay
+│   ├── store.ts          Clone names/colors/sleep state + settings (validated on load)
+│   ├── theme.ts          Light/dark palettes, clone color tags, popular apps
+│   ├── components/       SVG icons, gradient/wave art, buttons, switch, bottom sheet, toasts
+│   └── screens/          Welcome, Home, Lock, Sheets (picker/clone/settings), CloningOverlay
 └── android/app/src/main/java/com/eri/multiapp/space/
-    ├── Space.kt                  Core Clone Space logic (status, launch, icons)
+    ├── Space.kt                  Core Clone Space logic (status, launch, validation, icons)
     ├── Provisioning.kt           Device-admin receiver + provisioning activities
     ├── ProfileActionActivity.kt  Runs inside the Space: clone / sleep / remove / wipe
     ├── CloneLauncherActivity.kt  Invisible trampoline for home-screen shortcuts
@@ -102,11 +138,12 @@ app/
 3. Rename it, change its color, and **Add to home screen**. Check that the shortcut opens the clone.
 4. **Put to sleep** → it disappears from the Work tab and stops notifying → **Wake up**.
 5. **Remove clone** → only the clone is deleted, and the original WhatsApp keeps its data.
-6. Settings → **Delete Clone Space** → the app returns to the welcome screen.
+6. Settings → **App lock** on → leave the app for more than 15 seconds → come back. It should be locked.
+7. **Hide content** on → recent apps shows a blank preview, and screenshots are blocked.
+8. Settings → **Delete Clone Space** → asks for your fingerprint or PIN → the app returns to the welcome screen.
 
 ## Roadmap
 
-- Per-clone app lock (PIN / fingerprint)
 - Notification preview for clones inside Multi-App
 - Clone groups and a quick-switch widget
 - Backup and restore of clone settings

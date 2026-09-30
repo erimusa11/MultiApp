@@ -17,6 +17,15 @@ export interface InstalledApp {
   system: boolean;
 }
 
+export type AuthResult = 'success' | 'cancel' | 'lockout' | 'unavailable';
+
+export interface SecurityInfo {
+  deviceSecure: boolean;
+  internet: boolean;
+  debuggable: boolean;
+  secureScreen: boolean;
+}
+
 interface MultiAppSpaceNative {
   getSpaceStatus(): Promise<SpaceStatus>;
   createSpace(): Promise<boolean>;
@@ -31,6 +40,10 @@ interface MultiAppSpaceNative {
   launchClone(pkg: string): Promise<boolean>;
   openCloneSettings(pkg: string): Promise<boolean>;
   pinShortcut(pkg: string, label: string, color: string): Promise<boolean>;
+  authenticate(title: string, subtitle: string): Promise<AuthResult>;
+  setSecureScreen(enabled: boolean): Promise<boolean>;
+  getSecurityInfo(): Promise<SecurityInfo>;
+  haptic(kind: 'tap' | 'success' | 'warning'): void;
   getStore(): Promise<string | null>;
   setStore(json: string): Promise<boolean>;
 }

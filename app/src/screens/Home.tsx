@@ -11,10 +11,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppIcon, Tap } from '../components/UI';
-import { DotsGlyph, PlusGlyph, TwinGlyph } from '../components/Glyph';
+import { Gradient, Waves } from '../components/Art';
+import { Icon } from '../components/Icon';
 import { SpaceState } from '../native';
 import { CloneMeta } from '../store';
-import { colors, radius, shadow } from '../theme';
+import { Palette, radius, shadow, useStyles, useTheme } from '../theme';
 
 const logo = require('../../assets/logo-mark.png');
 
@@ -23,10 +24,18 @@ export interface CloneView extends CloneMeta {
   originalLabel: string;
 }
 
+type Suggestion = { packageName: string; label: string; icon: string };
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
 export function Home({
   clones,
   state,
   refreshing,
+  protectedMode,
   onRefresh,
   onOpen,
   onManage,
@@ -39,6 +48,7 @@ export function Home({
   clones: CloneView[];
   state: SpaceState;
   refreshing: boolean;
+  protectedMode: boolean;
   onRefresh: () => void;
   onOpen: (c: CloneView) => void;
   onManage: (c: CloneView) => void;
@@ -46,10 +56,12 @@ export function Home({
   onQuickClone: (pkg: string) => void;
   onSettings: () => void;
   onResume: () => void;
-  suggestions: { packageName: string; label: string; icon: string }[];
+  suggestions: Suggestion[];
 }) {
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
+  const { t } = useTheme();
+  const s = useStyles(makeStyles);
   const cols = width > 600 ? 5 : 3;
   const gap = 12;
   const tileW = (width - 40 - gap * (cols - 1)) / cols;
@@ -59,60 +71,92 @@ export function Home({
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
       <View style={s.header}>
-        <View style={s.brandRow}>
-          <Image source={logo} style={s.headerLogo} />
-          <View>
-            <Text style={s.brand}>MULTI-APP</Text>
-            <Text style={s.by}>BY ERI</Text>
-          </View>
+        <View>
+          <Text style={s.hello}>{greeting()}</Text>
+          <Text style={s.brand}>MULTI-APP</Text>
         </View>
-        <Tap onPress={onSettings} style={s.iconBtn}>
-          <DotsGlyph size={18} color={colors.ink} />
-        </Tap>
+        <View style={s.headerActions}>
+          <Tap onPress={onSettings} style={[s.iconBtn, protectedMode && s.iconBtnOn]} accessibilityLabel="Security">
+            <Icon name={protectedMode ? 'shieldCheck' : 'shield'} size={20} color={protectedMode ? t.success : t.ink} />
+          </Tap>
+          <Tap onPress={onSettings} style={s.iconBtn} accessibilityLabel="Settings">
+            <Icon name="sliders" size={20} color={t.ink} />
+          </Tap>
+        </View>
       </View>
 
       <ScrollView
         contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[colors.sky]} />}>
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[t.sky]} />}>
         {/* Space card */}
-        <View style={[s.spaceCard, shadow]}>
-          <View style={s.waveA} />
-          <View style={s.waveB} />
-          <Image source={logo} style={s.cardLogo} />
-          <View style={[s.pill, { backgroundColor: paused ? colors.warnSoft : 'rgba(255,255,255,0.18)' }]}>
-            <View style={[s.dot, { backgroundColor: paused ? colors.warn : '#7CF3B0' }]} />
-            <Text style={[s.pillText, paused && { color: '#9A5B00' }]}>{paused ? 'Paused' : 'Active'}</Text>
+        <View style={[s.hero, shadow(t, 2)]}>
+          <Gradient from={t.heroA} to={t.heroB} />
+          <Waves opacity={0.14} />
+          <View style={s.heroTop}>
+            <View style={[s.pill, paused && s.pillPaused]}>
+              <View style={[s.dot, { backgroundColor: paused ? '#FBBF24' : '#6EF0A8' }]} />
+              <Text style={s.pillText}>{paused ? 'Paused' : 'Clone Space active'}</Text>
+            </View>
+            <View style={s.heroLogo}>
+              <Image source={logo} style={s.heroLogoImg} />
+            </View>
           </View>
-          <Text style={s.cardTitle}>Your Clone Space</Text>
-          <Text style={s.cardCount}>
-            {clones.length} {clones.length === 1 ? 'clone' : 'clones'}
-            {sleeping ? `  ·  ${sleeping} sleeping` : ''}
-          </Text>
-          {paused ? (
-            <Tap onPress={onResume} style={s.resume}>
-              <Text style={s.resumeText}>Resume clones</Text>
-            </Tap>
-          ) : null}
+          <View style={s.countRow}>
+            <Text style={s.count}>{clones.length}</Text>
+            <View style={s.countLabel}>
+              <Text style={s.countTitle}>{clones.length === 1 ? 'clone' : 'clones'}</Text>
+              <Text style={s.countSub}>{sleeping ? `${sleeping} sleeping` : 'all awake'}</Text>
+            </View>
+          </View>
+          <View style={s.heroActions}>
+            {paused ? (
+              <Tap onPress={onResume} style={s.heroBtn}>
+                <Icon name="play" size={16} color="#0B5DA6" stroke={2.6} />
+                <Text style={s.heroBtnText}>Resume clones</Text>
+              </Tap>
+            ) : (
+              <Tap onPress={onAdd} style={s.heroBtn}>
+                <Icon name="plus" size={16} color="#0B5DA6" stroke={2.8} />
+                <Text style={s.heroBtnText}>New clone</Text>
+              </Tap>
+            )}
+          </View>
         </View>
+
+        {!protectedMode ? (
+          <Tap onPress={onSettings} style={s.tip} scaleTo={0.98}>
+            <View style={s.tipIcon}>
+              <Icon name="lock" size={18} color={t.warn} />
+            </View>
+            <View style={s.flex}>
+              <Text style={s.tipTitle}>Protect your clones</Text>
+              <Text style={s.tipText}>Turn on App lock so only you can open Multi-App.</Text>
+            </View>
+            <Icon name="chevron" size={18} color={t.muted} />
+          </Tap>
+        ) : null}
 
         {clones.length === 0 ? (
           <EmptyState suggestions={suggestions} onPick={onQuickClone} />
         ) : (
           <>
-            <Text style={s.section}>Your clones</Text>
+            <View style={s.sectionRow}>
+              <Text style={s.section}>Your clones</Text>
+              <Text style={s.sectionHint}>Hold to customize</Text>
+            </View>
             <View style={[s.grid, { gap }]}>
               {clones.map((c, i) => (
                 <CloneTile key={c.packageName} clone={c} width={tileW} index={i} onOpen={onOpen} onManage={onManage} />
               ))}
             </View>
-            <Text style={s.hint}>Tap to open · hold to customize</Text>
           </>
         )}
       </ScrollView>
 
       <View style={[s.fabWrap, { bottom: insets.bottom + 20 }]} pointerEvents="box-none">
-        <Tap onPress={onAdd} style={[s.fab, shadow]}>
-          <PlusGlyph size={18} />
+        <Tap onPress={onAdd} style={[s.fab, shadow(t, 2)]}>
+          <Gradient from={t.heroA} to={t.heroB} angle="horizontal" />
+          <Icon name="plus" size={20} color="#FFFFFF" stroke={2.8} />
           <Text style={s.fabText}>Clone an app</Text>
         </Tap>
       </View>
@@ -133,6 +177,7 @@ function CloneTile({
   onOpen: (c: CloneView) => void;
   onManage: (c: CloneView) => void;
 }) {
+  const s = useStyles(makeStyles);
   const appear = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(appear, { toValue: 1, delay: index * 45, useNativeDriver: true, bounciness: 9 }).start();
@@ -145,35 +190,40 @@ function CloneTile({
         opacity: appear,
         transform: [{ scale: appear.interpolate({ inputRange: [0, 1], outputRange: [0.7, 1] }) }],
       }}>
-      <Tap onPress={() => onOpen(clone)} onLongPress={() => onManage(clone)} style={s.tile}>
-        <View style={[s.tileAccent, { backgroundColor: clone.color }]} />
+      <Tap
+        onPress={() => onOpen(clone)}
+        onLongPress={() => onManage(clone)}
+        style={s.tile}
+        accessibilityLabel={`Open ${clone.name}. Long press for options`}>
+        <View style={[s.tileGlow, { backgroundColor: clone.color }]} />
         <AppIcon uri={clone.icon} size={54} badgeColor={clone.color} sleeping={clone.sleeping} />
-        <Text numberOfLines={1} style={[s.tileName, clone.sleeping && { color: colors.muted }]}>
+        <Text numberOfLines={1} style={[s.tileName, clone.sleeping && s.tileNameSleeping]}>
           {clone.name}
         </Text>
-        <Text numberOfLines={1} style={s.tileSub}>
-          {clone.sleeping ? 'Sleeping' : clone.originalLabel}
-        </Text>
+        <View style={s.tileSubRow}>
+          <View style={[s.tileDot, { backgroundColor: clone.sleeping ? '#9AA9BA' : clone.color }]} />
+          <Text numberOfLines={1} style={s.tileSub}>
+            {clone.sleeping ? 'Sleeping' : clone.originalLabel}
+          </Text>
+        </View>
       </Tap>
     </Animated.View>
   );
 }
 
-function EmptyState({
-  suggestions,
-  onPick,
-}: {
-  suggestions: { packageName: string; label: string; icon: string }[];
-  onPick: (pkg: string) => void;
-}) {
+function EmptyState({ suggestions, onPick }: { suggestions: Suggestion[]; onPick: (pkg: string) => void }) {
+  const { t } = useTheme();
+  const s = useStyles(makeStyles);
   const pulse = useRef(new Animated.Value(0)).current;
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.sequence([
         Animated.timing(pulse, { toValue: 1, duration: 1400, useNativeDriver: true }),
         Animated.timing(pulse, { toValue: 0, duration: 1400, useNativeDriver: true }),
       ]),
-    ).start();
+    );
+    loop.start();
+    return () => loop.stop();
   }, [pulse]);
   const shift = pulse.interpolate({ inputRange: [0, 1], outputRange: [0, 14] });
   const first = suggestions[0];
@@ -181,21 +231,22 @@ function EmptyState({
   return (
     <View style={s.empty}>
       <View style={s.emptyArt}>
-        <View style={[s.ghost, { backgroundColor: colors.skySoft }]}>
+        <View style={[s.ghost, s.ghostBack]}>
           {first ? <Image source={{ uri: first.icon }} style={s.ghostIcon} /> : null}
         </View>
         <Animated.View style={[s.ghost, s.ghostFront, { transform: [{ translateX: shift }, { translateY: shift }] }]}>
-          {first ? <Image source={{ uri: first.icon }} style={s.ghostIcon} /> : <TwinGlyph size={28} color={colors.sky} />}
+          {first ? <Image source={{ uri: first.icon }} style={s.ghostIcon} /> : <Icon name="twin" size={30} color={t.sky} />}
         </Animated.View>
       </View>
       <Text style={s.emptyTitle}>No clones yet</Text>
-      <Text style={s.emptyText}>Pick an app and Multi-App will create a brand-new, separate copy of it.</Text>
+      <Text style={s.emptyText}>Tap an app below, or “Clone an app”, and Multi-App creates a brand-new, separate copy.</Text>
       {suggestions.length ? (
         <View style={s.chips}>
-          {suggestions.slice(0, 4).map(a => (
+          {suggestions.slice(0, 6).map(a => (
             <Tap key={a.packageName} onPress={() => onPick(a.packageName)} style={s.chip}>
               <Image source={{ uri: a.icon }} style={s.chipIcon} />
               <Text style={s.chipText}>{a.label}</Text>
+              <Icon name="plus" size={14} color={t.brand} stroke={2.6} />
             </Tap>
           ))}
         </View>
@@ -204,142 +255,163 @@ function EmptyState({
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 20,
-    paddingVertical: 14,
-  },
-  brandRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  headerLogo: { width: 42, height: 42 },
-  brand: { fontSize: 21, fontWeight: '900', color: colors.brand, letterSpacing: 1.2 },
-  by: { fontSize: 9, color: colors.sky, letterSpacing: 4, fontWeight: '700', marginTop: -2 },
-  iconBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.card,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  spaceCard: {
-    backgroundColor: colors.brandDeep,
-    borderRadius: radius.lg,
-    padding: 22,
-    overflow: 'hidden',
-    marginTop: 4,
-    minHeight: 150,
-  },
-  waveA: {
-    position: 'absolute',
-    width: 260,
-    height: 260,
-    borderRadius: 260,
-    backgroundColor: colors.sky,
-    opacity: 0.35,
-    right: -90,
-    top: -110,
-  },
-  waveB: {
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    borderRadius: 200,
-    backgroundColor: '#5FD0FA',
-    opacity: 0.22,
-    right: 30,
-    bottom: -130,
-  },
-  cardLogo: { position: 'absolute', right: 14, top: 26, width: 110, height: 110, opacity: 0.95, tintColor: '#FFFFFF' },
-  pill: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 20,
-  },
-  dot: { width: 7, height: 7, borderRadius: 7 },
-  pillText: { color: colors.white, fontSize: 12, fontWeight: '700' },
-  cardTitle: { color: colors.white, fontSize: 22, fontWeight: '800', marginTop: 16 },
-  cardCount: { color: 'rgba(255,255,255,0.85)', fontSize: 14.5, marginTop: 4, fontWeight: '500' },
-  resume: {
-    marginTop: 14,
-    alignSelf: 'flex-start',
-    backgroundColor: colors.white,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 14,
-  },
-  resumeText: { color: colors.brandDeep, fontWeight: '800' },
-  section: { fontSize: 17, fontWeight: '800', color: colors.ink, marginTop: 28, marginBottom: 14 },
-  grid: { flexDirection: 'row', flexWrap: 'wrap' },
-  tile: {
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
-    alignItems: 'center',
-    paddingTop: 18,
-    paddingBottom: 14,
-    paddingHorizontal: 8,
-    borderWidth: 1,
-    borderColor: colors.line,
-    overflow: 'hidden',
-  },
-  tileAccent: { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
-  tileName: { marginTop: 12, fontSize: 13.5, fontWeight: '700', color: colors.ink },
-  tileSub: { fontSize: 11.5, color: colors.muted, marginTop: 2 },
-  hint: { textAlign: 'center', color: colors.muted, fontSize: 12.5, marginTop: 20 },
-  empty: { alignItems: 'center', marginTop: 40, paddingHorizontal: 12 },
-  emptyArt: { width: 120, height: 110, marginBottom: 18 },
-  ghost: {
-    position: 'absolute',
-    width: 84,
-    height: 84,
-    borderRadius: 26,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  ghostFront: {
-    backgroundColor: colors.card,
-    borderWidth: 2,
-    borderColor: colors.sky,
-    borderStyle: 'dashed',
-    left: 10,
-    top: 6,
-  },
-  ghostIcon: { width: 52, height: 52 },
-  emptyTitle: { fontSize: 20, fontWeight: '800', color: colors.ink },
-  emptyText: { textAlign: 'center', color: colors.muted, marginTop: 6, lineHeight: 20, fontSize: 14 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 20 },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: colors.card,
-    borderRadius: 30,
-    paddingLeft: 6,
-    paddingRight: 14,
-    paddingVertical: 6,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  chipIcon: { width: 26, height: 26 },
-  chipText: { fontWeight: '600', color: colors.ink, fontSize: 13.5 },
-  fabWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  fab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: colors.brandDeep,
-    paddingHorizontal: 26,
-    height: 58,
-    borderRadius: 30,
-  },
-  fabText: { color: colors.white, fontSize: 16, fontWeight: '800' },
-});
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: t.bg },
+    flex: { flex: 1 },
+    header: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      paddingHorizontal: 20,
+      paddingTop: 10,
+      paddingBottom: 16,
+    },
+    hello: { fontSize: 14, color: t.muted, fontWeight: '600' },
+    brand: { fontSize: 26, fontWeight: '900', color: t.dark ? t.ink : t.brand, letterSpacing: 1.6, marginTop: 1 },
+    headerActions: { flexDirection: 'row', gap: 10 },
+    iconBtn: {
+      width: 46,
+      height: 46,
+      borderRadius: 23,
+      backgroundColor: t.card,
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderWidth: 1,
+      borderColor: t.line,
+    },
+    iconBtnOn: { backgroundColor: t.successSoft, borderColor: 'transparent' },
+    hero: { borderRadius: radius.lg, padding: 20, overflow: 'hidden', minHeight: 196 },
+    heroTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    pill: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 7,
+      paddingHorizontal: 11,
+      paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: 'rgba(255,255,255,0.18)',
+    },
+    pillPaused: { backgroundColor: 'rgba(0,0,0,0.22)' },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    pillText: { color: '#FFFFFF', fontSize: 12.5, fontWeight: '700' },
+    heroLogo: {
+      width: 52,
+      height: 52,
+      borderRadius: 18,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    heroLogoImg: { width: 40, height: 40 },
+    countRow: { flexDirection: 'row', alignItems: 'flex-end', gap: 10, marginTop: 10 },
+    count: { color: '#FFFFFF', fontSize: 60, fontWeight: '900', lineHeight: 66, letterSpacing: -2 },
+    countLabel: { paddingBottom: 10 },
+    countTitle: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
+    countSub: { color: 'rgba(255,255,255,0.8)', fontSize: 13.5, fontWeight: '600' },
+    heroActions: { flexDirection: 'row', marginTop: 12 },
+    heroBtn: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: '#FFFFFF',
+      paddingHorizontal: 16,
+      paddingVertical: 11,
+      borderRadius: 14,
+    },
+    heroBtnText: { color: '#0B5DA6', fontWeight: '800', fontSize: 14.5 },
+    tip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 12,
+      backgroundColor: t.warnSoft,
+      borderRadius: radius.md,
+      padding: 14,
+      marginTop: 14,
+    },
+    tipIcon: {
+      width: 38,
+      height: 38,
+      borderRadius: 12,
+      backgroundColor: t.card,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    tipTitle: { fontSize: 14.5, fontWeight: '800', color: t.ink },
+    tipText: { fontSize: 12.5, color: t.inkSoft, marginTop: 1 },
+    sectionRow: {
+      flexDirection: 'row',
+      alignItems: 'baseline',
+      justifyContent: 'space-between',
+      marginTop: 28,
+      marginBottom: 14,
+    },
+    section: { fontSize: 18, fontWeight: '800', color: t.ink },
+    sectionHint: { fontSize: 12.5, color: t.muted, fontWeight: '600' },
+    grid: { flexDirection: 'row', flexWrap: 'wrap' },
+    tile: {
+      backgroundColor: t.card,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      paddingTop: 20,
+      paddingBottom: 14,
+      paddingHorizontal: 8,
+      borderWidth: 1,
+      borderColor: t.line,
+      overflow: 'hidden',
+    },
+    tileGlow: { position: 'absolute', top: -40, width: 90, height: 60, borderRadius: 45, opacity: t.dark ? 0.22 : 0.14 },
+    tileName: { marginTop: 13, fontSize: 13.5, fontWeight: '800', color: t.ink },
+    tileNameSleeping: { color: t.muted },
+    tileSubRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 3, maxWidth: '100%' },
+    tileDot: { width: 6, height: 6, borderRadius: 3 },
+    tileSub: { fontSize: 11.5, color: t.muted, flexShrink: 1 },
+    empty: { alignItems: 'center', marginTop: 36, paddingHorizontal: 8 },
+    emptyArt: { width: 120, height: 110, marginBottom: 18 },
+    ghost: {
+      position: 'absolute',
+      width: 84,
+      height: 84,
+      borderRadius: 26,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    ghostBack: { backgroundColor: t.skySoft },
+    ghostFront: {
+      backgroundColor: t.card,
+      borderWidth: 2,
+      borderColor: t.sky,
+      borderStyle: 'dashed',
+      left: 10,
+      top: 6,
+    },
+    ghostIcon: { width: 52, height: 52 },
+    emptyTitle: { fontSize: 21, fontWeight: '800', color: t.ink },
+    emptyText: { textAlign: 'center', color: t.muted, marginTop: 6, lineHeight: 20, fontSize: 14 },
+    chips: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8, marginTop: 20 },
+    chip: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 8,
+      backgroundColor: t.card,
+      borderRadius: 30,
+      paddingLeft: 6,
+      paddingRight: 12,
+      paddingVertical: 6,
+      borderWidth: 1,
+      borderColor: t.line,
+    },
+    chipIcon: { width: 28, height: 28 },
+    chipText: { fontWeight: '700', color: t.ink, fontSize: 13.5 },
+    fabWrap: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+    fab: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 10,
+      paddingHorizontal: 28,
+      height: 60,
+      borderRadius: 30,
+      overflow: 'hidden',
+    },
+    fabText: { color: '#FFFFFF', fontSize: 16.5, fontWeight: '800' },
+  });

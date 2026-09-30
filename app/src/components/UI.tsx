@@ -2,7 +2,6 @@ import React, { createContext, useCallback, useContext, useEffect, useRef, useSt
 import {
   ActivityIndicator,
   Animated,
-  BackHandler,
   Easing,
   Image,
   Modal,
@@ -15,8 +14,16 @@ import {
   useWindowDimensions,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { colors, radius, shadow } from '../theme';
-import { MoonGlyph, TwinGlyph } from './Glyph';
+import { Space } from '../native';
+import { Palette, radius, shadow, useStyles, useTheme } from '../theme';
+import { Gradient } from './Art';
+import { Icon, IconName } from './Icon';
+
+export const haptic = (kind: 'tap' | 'success' | 'warning' = 'tap') => {
+  try {
+    Space.haptic(kind);
+  } catch {}
+};
 
 /** Pressable with a springy scale-down, used for every tappable surface. */
 export function Tap({
@@ -25,7 +32,9 @@ export function Tap({
   style,
   children,
   disabled,
-  scaleTo = 0.95,
+  scaleTo = 0.96,
+  feedback = true,
+  accessibilityLabel,
 }: {
   onPress?: () => void;
   onLongPress?: () => void;
@@ -33,21 +42,37 @@ export function Tap({
   children: React.ReactNode;
   disabled?: boolean;
   scaleTo?: number;
+  feedback?: boolean;
+  accessibilityLabel?: string;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
   const to = (v: number) =>
     Animated.spring(scale, { toValue: v, useNativeDriver: true, speed: 40, bounciness: 8 }).start();
   return (
     <Pressable
-      onPress={onPress}
-      onLongPress={onLongPress}
+      accessibilityRole="button"
+      accessibilityLabel={accessibilityLabel}
+      onPress={
+        onPress &&
+        (() => {
+          if (feedback) {
+            haptic('tap');
+          }
+          onPress();
+        })
+      }
+      onLongPress={
+        onLongPress &&
+        (() => {
+          haptic('success');
+          onLongPress();
+        })
+      }
       delayLongPress={320}
       disabled={disabled}
       onPressIn={() => to(scaleTo)}
       onPressOut={() => to(1)}>
-      <Animated.View style={[style, { transform: [{ scale }] }, disabled && { opacity: 0.5 }]}>
-        {children}
-      </Animated.View>
+      <Animated.View style={[style, { transform: [{ scale }] }, disabled && ui.disabled]}>{children}</Animated.View>
     </Pressable>
   );
 }
@@ -62,33 +87,31 @@ export function Button({
 }: {
   title: string;
   onPress: () => void;
-  kind?: 'primary' | 'soft' | 'danger' | 'ghost';
+  kind?: 'primary' | 'soft' | 'danger' | 'ghost' | 'white';
   loading?: boolean;
-  icon?: React.ReactNode;
+  icon?: IconName;
   style?: StyleProp<ViewStyle>;
 }) {
+  const { t } = useTheme();
   const palette = {
-    primary: { bg: colors.brandDeep, fg: colors.white },
-    soft: { bg: colors.skySoft, fg: colors.brand },
-    danger: { bg: colors.dangerSoft, fg: colors.danger },
-    ghost: { bg: 'transparent', fg: colors.inkSoft },
+    primary: { bg: 'transparent', fg: t.white },
+    soft: { bg: t.skySoft, fg: t.brand },
+    danger: { bg: t.dangerSoft, fg: t.danger },
+    ghost: { bg: 'transparent', fg: t.inkSoft },
+    white: { bg: t.white, fg: '#0B5DA6' },
   }[kind];
   return (
     <Tap
       onPress={onPress}
       disabled={loading}
-      style={[
-        styles.button,
-        { backgroundColor: palette.bg },
-        kind === 'primary' && shadow,
-        style,
-      ]}>
+      style={[ui.button, { backgroundColor: palette.bg }, kind === 'primary' && shadow(t, 2), style]}>
+      {kind === 'primary' ? <Gradient from={t.heroA} to={t.heroB} angle="horizontal" /> : null}
       {loading ? (
         <ActivityIndicator color={palette.fg} />
       ) : (
         <>
-          {icon}
-          <Text style={[styles.buttonText, { color: palette.fg }]}>{title}</Text>
+          {icon ? <Icon name={icon} size={19} color={palette.fg} stroke={2.4} /> : null}
+          <Text style={[ui.buttonText, { color: palette.fg }]}>{title}</Text>
         </>
       )}
     </Tap>
@@ -107,35 +130,64 @@ export function AppIcon({
   badgeColor?: string;
   sleeping?: boolean;
 }) {
-  const b = Math.round(size * 0.4);
+  const { t } = useTheme();
+  const b = Math.round(size * 0.42);
   return (
     <View style={{ width: size, height: size }}>
       {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size, opacity: sleeping ? 0.4 : 1 }} />
+        <Image source={{ uri }} style={{ width: size, height: size, opacity: sleeping ? 0.35 : 1 }} />
       ) : (
-        <View style={{ width: size, height: size, borderRadius: size * 0.28, backgroundColor: colors.line }} />
+        <View style={{ width: size, height: size, borderRadius: size * 0.28, backgroundColor: t.line }} />
       )}
       {badgeColor ? (
         <View
           style={[
-            styles.badge,
+            ui.badge,
             {
               width: b,
               height: b,
               borderRadius: b,
-              right: -b * 0.2,
-              bottom: -b * 0.2,
-              backgroundColor: sleeping ? colors.muted : badgeColor,
+              right: -b * 0.22,
+              bottom: -b * 0.22,
+              borderColor: t.card,
+              backgroundColor: sleeping ? t.muted : badgeColor,
             },
           ]}>
-          {sleeping ? (
-            <MoonGlyph size={b * 0.5} bg={colors.muted} />
-          ) : (
-            <TwinGlyph size={b * 0.52} color={colors.white} fill={badgeColor} />
-          )}
+          <Icon name={sleeping ? 'moon' : 'twin'} size={b * 0.56} color="#FFFFFF" stroke={2.6} />
         </View>
       ) : null}
     </View>
+  );
+}
+
+/** Rounded icon tile used in list rows. */
+export function IconTile({ name, color, bg, size = 42 }: { name: IconName; color: string; bg: string; size?: number }) {
+  return (
+    <View style={[ui.iconTile, { width: size, height: size, borderRadius: size * 0.32, backgroundColor: bg }]}>
+      <Icon name={name} size={size * 0.48} color={color} stroke={2.2} />
+    </View>
+  );
+}
+
+/** Animated on/off switch. */
+export function Switch({ value, onChange }: { value: boolean; onChange: (v: boolean) => void }) {
+  const { t } = useTheme();
+  const anim = useRef(new Animated.Value(value ? 1 : 0)).current;
+  useEffect(() => {
+    Animated.spring(anim, { toValue: value ? 1 : 0, useNativeDriver: false, bounciness: 8 }).start();
+  }, [value, anim]);
+  return (
+    <Pressable accessibilityRole="switch" accessibilityState={{ checked: value }} onPress={() => onChange(!value)} hitSlop={8}>
+      <Animated.View
+        style={[
+          ui.switch,
+          { backgroundColor: anim.interpolate({ inputRange: [0, 1], outputRange: [t.line, t.sky] }) },
+        ]}>
+        <Animated.View
+          style={[ui.knob, { transform: [{ translateX: anim.interpolate({ inputRange: [0, 1], outputRange: [3, 23] }) }] }]}
+        />
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -153,43 +205,41 @@ export function Sheet({
 }) {
   const { height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
+  const s = useStyles(sheetStyles);
   const [mounted, setMounted] = useState(visible);
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
       setMounted(true);
-      Animated.spring(progress, { toValue: 1, useNativeDriver: true, damping: 20, stiffness: 180 }).start();
-    } else if (mounted) {
+      Animated.spring(progress, { toValue: 1, useNativeDriver: true, damping: 22, stiffness: 190 }).start();
+    } else {
       Animated.timing(progress, {
         toValue: 0,
         duration: 200,
         easing: Easing.in(Easing.cubic),
         useNativeDriver: true,
-      }).start(() => setMounted(false));
+      }).start(({ finished }) => finished && setMounted(false));
     }
-  }, [visible, mounted, progress]);
+  }, [visible, progress]);
 
   if (!mounted) {
     return null;
   }
   const translateY = progress.interpolate({ inputRange: [0, 1], outputRange: [height, 0] });
+  const maxHeight = height - insets.top - 20;
   return (
     <Modal transparent visible statusBarTranslucent navigationBarTranslucent onRequestClose={onClose}>
-      <Animated.View style={[StyleSheet.absoluteFill, styles.backdrop, { opacity: progress }]}>
-        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} />
+      <Animated.View style={[StyleSheet.absoluteFill, s.backdrop, { opacity: progress }]}>
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
       </Animated.View>
       <Animated.View
         style={[
-          styles.sheet,
-          {
-            paddingBottom: insets.bottom + 16,
-            transform: [{ translateY }],
-            maxHeight: height - insets.top - 24,
-          },
-          fullHeight && { height: height - insets.top - 24 },
+          s.sheet,
+          { paddingBottom: insets.bottom + 16, transform: [{ translateY }], maxHeight },
+          fullHeight && { height: maxHeight },
         ]}>
-        <View style={styles.grabber} />
+        <View style={s.grabber} />
         {children}
       </Animated.View>
     </Modal>
@@ -204,6 +254,7 @@ export const useToast = () => useContext(ToastContext);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const insets = useSafeAreaInsets();
+  const { t } = useTheme();
   const [toast, setToast] = useState<{ msg: string; kind: ToastKind } | null>(null);
   const anim = useRef(new Animated.Value(0)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -213,16 +264,20 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       if (timer.current) {
         clearTimeout(timer.current);
       }
+      if (kind === 'error') {
+        haptic('warning');
+      }
       setToast({ msg, kind });
       Animated.spring(anim, { toValue: 1, useNativeDriver: true, bounciness: 10 }).start();
       timer.current = setTimeout(() => {
         Animated.timing(anim, { toValue: 0, duration: 220, useNativeDriver: true }).start(() => setToast(null));
-      }, 2600);
+      }, 2800);
     },
     [anim],
   );
 
-  const bg = toast?.kind === 'error' ? colors.danger : toast?.kind === 'success' ? colors.ink : colors.brandDeep;
+  const accent = toast?.kind === 'error' ? t.danger : toast?.kind === 'success' ? t.success : t.sky;
+  const icon: IconName = toast?.kind === 'error' ? 'info' : toast?.kind === 'success' ? 'check' : 'sparkle';
   return (
     <ToastContext.Provider value={show}>
       {children}
@@ -230,37 +285,27 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
         <Animated.View
           pointerEvents="none"
           style={[
-            styles.toast,
-            shadow,
+            ui.toast,
+            shadow(t, 2),
             {
-              backgroundColor: bg,
-              top: insets.top + 12,
+              backgroundColor: t.dark ? t.cardAlt : '#0B2540',
+              top: insets.top + 10,
               opacity: anim,
               transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }],
             },
           ]}>
-          <Text style={styles.toastText}>{toast.msg}</Text>
+          <View style={[ui.toastIcon, { backgroundColor: accent }]}>
+            <Icon name={icon} size={14} color="#FFFFFF" stroke={2.8} />
+          </View>
+          <Text style={ui.toastText}>{toast.msg}</Text>
         </Animated.View>
       ) : null}
     </ToastContext.Provider>
   );
 }
 
-/** Calls handler on Android back press while `active`. */
-export function useBack(active: boolean, handler: () => void) {
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
-      handler();
-      return true;
-    });
-    return () => sub.remove();
-  }, [active, handler]);
-}
-
-export const styles = StyleSheet.create({
+const ui = StyleSheet.create({
+  disabled: { opacity: 0.45 },
   button: {
     height: 56,
     borderRadius: radius.md,
@@ -269,41 +314,56 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 10,
+    overflow: 'hidden',
   },
   buttonText: { fontSize: 16, fontWeight: '700', letterSpacing: 0.2 },
-  badge: {
-    position: 'absolute',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2.5,
-    borderColor: colors.white,
-  },
-  backdrop: { backgroundColor: 'rgba(8, 30, 52, 0.45)' },
-  sheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: colors.bg,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    paddingTop: 10,
-  },
-  grabber: {
-    alignSelf: 'center',
-    width: 44,
-    height: 5,
-    borderRadius: 5,
-    backgroundColor: colors.line,
-    marginBottom: 8,
+  badge: { position: 'absolute', alignItems: 'center', justifyContent: 'center', borderWidth: 2.5 },
+  iconTile: { alignItems: 'center', justifyContent: 'center' },
+  switch: { width: 50, height: 30, borderRadius: 15, justifyContent: 'center' },
+  knob: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 2,
   },
   toast: {
     position: 'absolute',
-    left: 20,
-    right: 20,
+    left: 16,
+    right: 16,
     borderRadius: radius.md,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+    paddingVertical: 13,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
-  toastText: { color: colors.white, fontWeight: '600', fontSize: 14.5, textAlign: 'center' },
+  toastIcon: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  toastText: { color: '#FFFFFF', fontWeight: '600', fontSize: 14.5, flex: 1 },
 });
+
+const sheetStyles = (t: Palette) =>
+  StyleSheet.create({
+    backdrop: { backgroundColor: t.overlay },
+    sheet: {
+      position: 'absolute',
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: t.bg,
+      borderTopLeftRadius: radius.xl,
+      borderTopRightRadius: radius.xl,
+      paddingTop: 10,
+    },
+    grabber: {
+      alignSelf: 'center',
+      width: 44,
+      height: 5,
+      borderRadius: 5,
+      backgroundColor: t.line,
+      marginBottom: 10,
+    },
+  });

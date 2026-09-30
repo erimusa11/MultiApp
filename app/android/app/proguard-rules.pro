@@ -8,3 +8,13 @@
 #   http://developer.android.com/guide/developing/tools/proguard.html
 
 # Add any project specific keep options here:
+
+# --- Multi-App ---
+# Components referenced from the manifest and the React Native bridge.
+-keep class com.eri.multiapp.** { *; }
+-keepclassmembers class * { @com.facebook.react.bridge.ReactMethod *; }
+# Strip debug/verbose logging from release builds.
+-assumenosideeffects class android.util.Log {
+    public static int v(...);
+    public static int d(...);
+}

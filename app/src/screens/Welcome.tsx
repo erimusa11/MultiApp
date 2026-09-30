@@ -1,16 +1,17 @@
 import React, { useEffect, useRef } from 'react';
-import { Animated, Easing, Image, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Image, ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button } from '../components/UI';
-import { TwinGlyph } from '../components/Glyph';
-import { colors, radius } from '../theme';
+import { Button, IconTile } from '../components/UI';
+import { Gradient, Waves } from '../components/Art';
+import { IconName } from '../components/Icon';
+import { Palette, radius, shadow, useStyles, useTheme } from '../theme';
 
 const logo = require('../../assets/logo-mark.png');
 
-const features = [
-  { title: 'Two accounts, one phone', text: 'Run a second WhatsApp, Instagram, Telegram and more — side by side.' },
-  { title: 'Truly separate', text: 'Every clone has its own login, chats, storage and notifications.' },
-  { title: 'Private by design', text: 'Built on Android’s own profile isolation. Nothing leaves your phone.' },
+const features: { icon: IconName; title: string; text: string }[] = [
+  { icon: 'twin', title: 'Two accounts, one phone', text: 'A second WhatsApp, Instagram, Telegram and more — side by side.' },
+  { icon: 'lock', title: 'Truly separate', text: 'Each clone has its own login, chats, files and notifications.' },
+  { icon: 'wifiOff', title: 'Offline & private', text: 'No servers, no tracking. Built on Android’s own isolation.' },
 ];
 
 export function Welcome({
@@ -23,129 +24,122 @@ export function Welcome({
   finishing: boolean;
 }) {
   const insets = useSafeAreaInsets();
+  const { height } = useWindowDimensions();
+  const { t } = useTheme();
+  const s = useStyles(makeStyles);
   const float = useRef(new Animated.Value(0)).current;
   const enter = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    Animated.loop(
+    const loop = Animated.loop(
       Animated.sequence([
-        Animated.timing(float, { toValue: 1, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(float, { toValue: 0, duration: 2200, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(float, { toValue: 1, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+        Animated.timing(float, { toValue: 0, duration: 2400, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
       ]),
-    ).start();
-    Animated.timing(enter, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    );
+    loop.start();
+    Animated.timing(enter, { toValue: 1, duration: 800, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    return () => loop.stop();
   }, [float, enter]);
 
-  const translateY = float.interpolate({ inputRange: [0, 1], outputRange: [0, -12] });
+  const heroH = Math.min(380, height * 0.44) + insets.top;
   const rise = (i: number) => ({
     opacity: enter,
-    transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [24 + i * 10, 0] }) }],
+    transform: [{ translateY: enter.interpolate({ inputRange: [0, 1], outputRange: [30 + i * 12, 0] }) }],
   });
 
   return (
-    <View style={[s.root, { paddingTop: insets.top }]}>
-      <View style={s.glowA} />
-      <View style={s.glowB} />
-      <ScrollView contentContainerStyle={[s.content, { paddingBottom: insets.bottom + 24 }]}>
-        <Animated.View style={[s.hero, { transform: [{ translateY }] }]}>
-          <Image source={logo} style={s.logo} resizeMode="contain" />
-        </Animated.View>
-
-        <Animated.View style={rise(0)}>
+    <View style={s.root}>
+      <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 28 }} bounces={false}>
+        <View style={[s.hero, { height: heroH, paddingTop: insets.top }]}>
+          <Gradient from={t.heroA} to={t.heroB} />
+          <Waves opacity={0.16} />
+          <Animated.View
+            style={[
+              s.logoTile,
+              shadow(t, 2),
+              { transform: [{ translateY: float.interpolate({ inputRange: [0, 1], outputRange: [0, -10] }) }] },
+            ]}>
+            <Image source={logo} style={s.logo} resizeMode="contain" />
+          </Animated.View>
           <Text style={s.brand}>MULTI-APP</Text>
           <Text style={s.by}>BY ERI</Text>
-          <Text style={s.title}>Clone any app.{'\n'}Live two lives.</Text>
-        </Animated.View>
-
-        <View style={s.features}>
-          {features.map((f, i) => (
-            <Animated.View key={f.title} style={[s.feature, rise(i + 1)]}>
-              <View style={s.featureIcon}>
-                <TwinGlyph size={20} color={colors.brand} fill={colors.skySoft} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={s.featureTitle}>{f.title}</Text>
-                <Text style={s.featureText}>{f.text}</Text>
-              </View>
-            </Animated.View>
-          ))}
+          <View style={s.curve} />
         </View>
 
-        <Animated.View style={rise(4)}>
-          <Button
-            title={finishing ? 'Finishing setup…' : 'Create my Clone Space'}
-            onPress={onCreate}
-            loading={creating || finishing}
-          />
-          <Text style={s.note}>
-            Android will show a short “work profile” setup — that’s your Clone Space. It takes about 30 seconds and
-            only happens once.
-          </Text>
-        </Animated.View>
+        <View style={s.body}>
+          <Animated.Text style={[s.title, rise(0)]}>Clone any app.{'\n'}Live two lives.</Animated.Text>
+
+          <View style={s.features}>
+            {features.map((f, i) => (
+              <Animated.View key={f.title} style={[s.feature, rise(i + 1)]}>
+                <IconTile name={f.icon} color={t.brand} bg={t.skySoft} />
+                <View style={s.flex}>
+                  <Text style={s.featureTitle}>{f.title}</Text>
+                  <Text style={s.featureText}>{f.text}</Text>
+                </View>
+              </Animated.View>
+            ))}
+          </View>
+
+          <Animated.View style={rise(4)}>
+            <Button
+              title={finishing ? 'Finishing setup…' : 'Create my Clone Space'}
+              icon="sparkle"
+              onPress={onCreate}
+              loading={creating || finishing}
+            />
+            <Text style={s.note}>
+              Android will show a short “work profile” setup — that’s your Clone Space. It takes about 30 seconds and
+              happens only once.
+            </Text>
+          </Animated.View>
+        </View>
       </ScrollView>
     </View>
   );
 }
 
-const s = StyleSheet.create({
-  root: { flex: 1, backgroundColor: colors.bg, overflow: 'hidden' },
-  glowA: {
-    position: 'absolute',
-    width: 420,
-    height: 420,
-    borderRadius: 420,
-    backgroundColor: '#DDF2FD',
-    top: -160,
-    right: -140,
-  },
-  glowB: {
-    position: 'absolute',
-    width: 300,
-    height: 300,
-    borderRadius: 300,
-    backgroundColor: '#E8F1FB',
-    top: 200,
-    left: -170,
-  },
-  content: { paddingHorizontal: 24, paddingTop: 24 },
-  hero: { alignItems: 'center', marginTop: 12, marginBottom: 8 },
-  logo: { width: 230, height: 230 },
-  brand: {
-    textAlign: 'center',
-    fontSize: 40,
-    fontWeight: '900',
-    color: colors.brand,
-    letterSpacing: 2,
-  },
-  by: { textAlign: 'center', color: colors.sky, letterSpacing: 6, fontSize: 12, fontWeight: '600', marginTop: 2 },
-  title: {
-    textAlign: 'center',
-    fontSize: 22,
-    lineHeight: 30,
-    fontWeight: '700',
-    color: colors.ink,
-    marginTop: 22,
-  },
-  features: { marginTop: 26, marginBottom: 28, gap: 12 },
-  feature: {
-    flexDirection: 'row',
-    gap: 14,
-    alignItems: 'center',
-    backgroundColor: colors.card,
-    borderRadius: radius.md,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: colors.line,
-  },
-  featureIcon: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: colors.skySoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  featureTitle: { fontSize: 15.5, fontWeight: '700', color: colors.ink },
-  featureText: { fontSize: 13.5, color: colors.muted, marginTop: 2, lineHeight: 19 },
-  note: { textAlign: 'center', color: colors.muted, fontSize: 12.5, lineHeight: 18, marginTop: 14, paddingHorizontal: 8 },
-});
+const makeStyles = (t: Palette) =>
+  StyleSheet.create({
+    root: { flex: 1, backgroundColor: t.bg },
+    flex: { flex: 1 },
+    hero: { alignItems: 'center', justifyContent: 'center', overflow: 'hidden' },
+    logoTile: {
+      width: 132,
+      height: 132,
+      borderRadius: 40,
+      backgroundColor: '#FFFFFF',
+      alignItems: 'center',
+      justifyContent: 'center',
+      marginBottom: 18,
+    },
+    logo: { width: 104, height: 104 },
+    brand: { fontSize: 38, fontWeight: '900', color: '#FFFFFF', letterSpacing: 3 },
+    by: { color: 'rgba(255,255,255,0.8)', letterSpacing: 7, fontSize: 12, fontWeight: '700', marginTop: 2 },
+    curve: {
+      position: 'absolute',
+      bottom: -40,
+      left: -40,
+      right: -40,
+      height: 80,
+      borderRadius: 400,
+      backgroundColor: t.bg,
+    },
+    body: { paddingHorizontal: 22, marginTop: 4 },
+    title: { textAlign: 'center', fontSize: 26, lineHeight: 34, fontWeight: '800', color: t.ink, letterSpacing: -0.3 },
+    features: { marginTop: 24, marginBottom: 26, gap: 10 },
+    feature: {
+      flexDirection: 'row',
+      gap: 14,
+      alignItems: 'center',
+      backgroundColor: t.card,
+      borderRadius: radius.md,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: t.line,
+    },
+    featureTitle: { fontSize: 15.5, fontWeight: '700', color: t.ink },
+    featureText: { fontSize: 13.5, color: t.muted, marginTop: 2, lineHeight: 19 },
+    note: { textAlign: 'center', color: t.muted, fontSize: 12.5, lineHeight: 18, marginTop: 14, paddingHorizontal: 8 },
+  });

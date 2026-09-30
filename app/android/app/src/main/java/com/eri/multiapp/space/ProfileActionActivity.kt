@@ -39,6 +39,12 @@ class ProfileActionActivity : Activity() {
         }
 
         val pkg = intent.getStringExtra(Space.EXTRA_PACKAGE)
+        if (pkg != null && (!Space.isValidPackageName(pkg) || pkg == packageName)) {
+            // Never act on malformed input, and never on ourselves (hiding or
+            // uninstalling the Space owner would break the Space).
+            fail("Invalid app")
+            return
+        }
         try {
             when (intent.action) {
                 Space.ACTION_PING -> ok()
@@ -115,7 +121,8 @@ class ProfileActionActivity : Activity() {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         @Suppress("DEPRECATION")
                         val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                        if (confirm != null) startActivity(confirm) else fail("Uninstall blocked")
+                        if (confirm != null && isSystemUninstallPrompt(confirm)) startActivity(confirm)
+                        else fail("Uninstall blocked")
                     }
                     PackageInstaller.STATUS_SUCCESS -> ok()
                     else -> fail(intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Uninstall failed")
@@ -132,6 +139,23 @@ class ProfileActionActivity : Activity() {
 
         // Never leave the caller hanging.
         handler.postDelayed({ if (!isFinishing) fail("Uninstall timed out") }, 60_000)
+    }
+
+    /**
+     * SECURITY: only relaunch the system uninstall confirmation, never an arbitrary
+     * intent (prevents intent redirection), and strip any URI grant flags.
+     */
+    private fun isSystemUninstallPrompt(confirm: Intent): Boolean {
+        confirm.flags = confirm.flags and
+            (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION).inv()
+        val target = confirm.resolveActivity(packageManager) ?: return false
+        if (target.packageName == packageName) return false
+        return try {
+            packageManager.getApplicationInfo(target.packageName, 0).flags and ApplicationInfo.FLAG_SYSTEM != 0
+        } catch (e: PackageManager.NameNotFoundException) {
+            false
+        }
     }
 
     private fun ok() = finishWith(RESULT_OK, null)
