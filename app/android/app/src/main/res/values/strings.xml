@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Multi-App</string>
+    <string name="space_name">Multi-App Space</string>
+    <string name="admin_description">Lets Multi-App create and manage your private Clone Space (an Android work profile) where duplicated apps live.</string>
+</resources>
