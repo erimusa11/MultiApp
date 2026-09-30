@@ -336,7 +336,12 @@ class MultiAppSpaceModule(private val ctx: ReactApplicationContext) : ReactConte
         }
         val activity = ctx.currentActivity ?: return promise.reject("E_NO_ACTIVITY", "App is not in foreground")
         val intent = Space.spaceIntent(action, pkg)
-        if (ctx.packageManager.queryIntentActivities(intent, 0).isEmpty()) {
+        if (!Space.isForwardingReady(ctx)) {
+            // A paused Space (work apps switched off) can't receive actions: wake it and say so.
+            if (Space.state(ctx) == "paused") {
+                Space.unpause(ctx)
+                return promise.reject("E_PAUSED", "Clone Space is paused. Turn on “Work apps”, then try again.")
+            }
             return promise.reject("E_NO_SPACE", "Clone Space is not ready")
         }
         if (!beginPending(promise, REQ_ACTION)) return

@@ -451,7 +451,7 @@ export function SettingsSheet({
         <Button title="Delete Clone Space" kind="danger" icon="trash" onPress={confirmDestroy} />
 
         <View style={s.meta}>
-          <Text style={s.metaText}>Multi-App 1.1 · by ERI</Text>
+          <Text style={s.metaText}>Multi-App 1.2 · by ERI</Text>
           {status ? (
             <Text style={s.metaText}>
               {status.device} · Android API {status.sdk}

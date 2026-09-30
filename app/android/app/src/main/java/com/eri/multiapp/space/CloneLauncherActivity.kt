@@ -1,6 +1,7 @@
 package com.eri.multiapp.space
 
 import android.app.Activity
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 
@@ -13,14 +14,29 @@ class CloneLauncherActivity : Activity() {
             finish()
             return
         }
-        if (!Space.launchDirect(this, pkg)) {
-            val forward = Space.spaceIntent(Space.ACTION_LAUNCH, pkg)
-            if (packageManager.queryIntentActivities(forward, 0).isNotEmpty()) {
-                @Suppress("DEPRECATION")
-                startActivityForResult(forward, 1)
-            } else {
-                Toast.makeText(this, "This clone is no longer available", Toast.LENGTH_SHORT).show()
-            }
+        if (Space.launchDirect(this, pkg)) {
+            finish()
+            return
+        }
+        if (!Space.isForwardingReady(this)) {
+            Toast.makeText(this, "This clone is no longer available", Toast.LENGTH_SHORT).show()
+            finish()
+            return
+        }
+        try {
+            // Stay alive until the Space answers: it identifies us through this activity.
+            @Suppress("DEPRECATION")
+            startActivityForResult(Space.spaceIntent(Space.ACTION_LAUNCH, pkg), 1)
+        } catch (e: Exception) {
+            finish()
+        }
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK) {
+            Toast.makeText(this, "Couldn't open this clone", Toast.LENGTH_SHORT).show()
         }
         finish()
     }

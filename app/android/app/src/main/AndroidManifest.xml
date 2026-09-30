@@ -23,6 +23,24 @@
         <intent>
             <action android:name="com.eri.multiapp.action.PING" />
         </intent>
+        <intent>
+            <action android:name="com.eri.multiapp.action.CLONE" />
+        </intent>
+        <intent>
+            <action android:name="com.eri.multiapp.action.REMOVE" />
+        </intent>
+        <intent>
+            <action android:name="com.eri.multiapp.action.FREEZE" />
+        </intent>
+        <intent>
+            <action android:name="com.eri.multiapp.action.UNFREEZE" />
+        </intent>
+        <intent>
+            <action android:name="com.eri.multiapp.action.LAUNCH" />
+        </intent>
+        <intent>
+            <action android:name="com.eri.multiapp.action.DESTROY" />
+        </intent>
     </queries>
 
     <application
@@ -126,7 +144,6 @@
         android:theme="@style/Transparent"
         android:excludeFromRecents="true"
         android:taskAffinity=""
-        android:noHistory="true"
         android:exported="false" />
     </application>
 </manifest>

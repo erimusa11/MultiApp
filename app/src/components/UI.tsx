@@ -132,10 +132,11 @@ export function AppIcon({
 }) {
   const { t } = useTheme();
   const b = Math.round(size * 0.42);
+  const iconOpacity = sleeping ? 0.35 : 1;
   return (
     <View style={{ width: size, height: size }}>
       {uri ? (
-        <Image source={{ uri }} style={{ width: size, height: size, opacity: sleeping ? 0.35 : 1 }} />
+        <Image source={{ uri }} style={{ width: size, height: size, opacity: iconOpacity }} />
       ) : (
         <View style={{ width: size, height: size, borderRadius: size * 0.28, backgroundColor: t.line }} />
       )}
@@ -278,6 +279,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 
   const accent = toast?.kind === 'error' ? t.danger : toast?.kind === 'success' ? t.success : t.sky;
   const icon: IconName = toast?.kind === 'error' ? 'info' : toast?.kind === 'success' ? 'check' : 'sparkle';
+  const toastBg = t.dark ? t.cardAlt : '#0B2540';
   return (
     <ToastContext.Provider value={show}>
       {children}
@@ -288,7 +290,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             ui.toast,
             shadow(t, 2),
             {
-              backgroundColor: t.dark ? t.cardAlt : '#0B2540',
+              backgroundColor: toastBg,
               top: insets.top + 10,
               opacity: anim,
               transform: [{ translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [-30, 0] }) }],

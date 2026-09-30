@@ -58,7 +58,7 @@ object Space {
     const val PREFS_SECURITY = "multiapp_security"
     const val KEY_SECURE_SCREEN = "secure_screen"
 
-    fun admin(ctx: Context) =ComponentName(ctx, MultiAppAdminReceiver::class.java)
+    fun admin(ctx: Context) = ComponentName(ctx, MultiAppAdminReceiver::class.java)
 
     fun dpm(ctx: Context): DevicePolicyManager =
         ctx.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager

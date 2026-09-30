@@ -67,6 +67,7 @@ export function Home({
   const tileW = (width - 40 - gap * (cols - 1)) / cols;
   const sleeping = clones.filter(c => c.sleeping).length;
   const paused = state === 'paused';
+  const dotColor = paused ? '#FBBF24' : '#6EF0A8';
 
   return (
     <View style={[s.root, { paddingTop: insets.top }]}>
@@ -86,7 +87,7 @@ export function Home({
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingHorizontal: 20, paddingBottom: insets.bottom + 120 }}
+        contentContainerStyle={[s.scrollPad, { paddingBottom: insets.bottom + 120 }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={[t.sky]} />}>
         {/* Space card */}
         <View style={[s.hero, shadow(t, 2)]}>
@@ -94,7 +95,7 @@ export function Home({
           <Waves opacity={0.14} />
           <View style={s.heroTop}>
             <View style={[s.pill, paused && s.pillPaused]}>
-              <View style={[s.dot, { backgroundColor: paused ? '#FBBF24' : '#6EF0A8' }]} />
+              <View style={[s.dot, { backgroundColor: dotColor }]} />
               <Text style={s.pillText}>{paused ? 'Paused' : 'Clone Space active'}</Text>
             </View>
             <View style={s.heroLogo}>
@@ -179,6 +180,7 @@ function CloneTile({
 }) {
   const s = useStyles(makeStyles);
   const appear = useRef(new Animated.Value(0)).current;
+  const subDotColor = clone.sleeping ? '#9AA9BA' : clone.color;
   useEffect(() => {
     Animated.spring(appear, { toValue: 1, delay: index * 45, useNativeDriver: true, bounciness: 9 }).start();
   }, [appear, index]);
@@ -201,7 +203,7 @@ function CloneTile({
           {clone.name}
         </Text>
         <View style={s.tileSubRow}>
-          <View style={[s.tileDot, { backgroundColor: clone.sleeping ? '#9AA9BA' : clone.color }]} />
+          <View style={[s.tileDot, { backgroundColor: subDotColor }]} />
           <Text numberOfLines={1} style={s.tileSub}>
             {clone.sleeping ? 'Sleeping' : clone.originalLabel}
           </Text>
@@ -259,6 +261,7 @@ const makeStyles = (t: Palette) =>
   StyleSheet.create({
     root: { flex: 1, backgroundColor: t.bg },
     flex: { flex: 1 },
+    scrollPad: { paddingHorizontal: 20 },
     header: {
       flexDirection: 'row',
       alignItems: 'center',

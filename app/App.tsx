@@ -305,15 +305,20 @@ function Main() {
         return;
       }
       setFinishing(true);
+      let ready = false;
       for (let i = 0; i < 25; i++) {
         const st = await refresh();
         if (st && (st.state === 'ready' || st.state === 'paused')) {
+          ready = true;
           haptic('success');
           toast('Your Clone Space is ready ✨', 'success');
           setPickerOpen(true);
           break;
         }
         await wait(1000);
+      }
+      if (!ready) {
+        toast('Setup is taking longer than usual. Pull down to refresh in a moment.', 'error');
       }
     } catch (e) {
       toast(errorMessage(e), 'error');
