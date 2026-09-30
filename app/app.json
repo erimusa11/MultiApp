@@ -1,4 +1,9 @@
 {
   "name": "MultiApp",
-  "displayName": "Multi-App"
+  "displayName": "Multi-App",
+  "extra": {
+    "eas": {
+      "projectId": "1da029d0-7daa-4b9e-bc74-1166f6583b15"
+    }
+  }
 }
