@@ -21,6 +21,7 @@ import android.util.Base64
 import android.util.Log
 import com.eri.multiapp.R
 import java.io.ByteArrayOutputStream
+import java.io.File
 
 /**
  * The "Clone Space" is an Android managed (work) profile owned by Multi-App.
@@ -48,6 +49,7 @@ object Space {
 
     const val EXTRA_PACKAGE = "com.eri.multiapp.extra.PACKAGE"
     const val EXTRA_ERROR = "com.eri.multiapp.extra.ERROR"
+    const val EXTRA_APKS = "com.eri.multiapp.extra.APKS"
 
     private val PACKAGE_NAME = Regex("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z0-9_]+)+$")
 
@@ -117,10 +119,25 @@ object Space {
         } ?: others.firstOrNull()
     }
 
-    fun spaceIntent(action: String, pkg: String? = null): Intent =
+    fun spaceIntent(action: String, pkg: String? = null, apks: Array<String>? = null): Intent =
         Intent(action).addCategory(Intent.CATEGORY_DEFAULT).apply {
             if (pkg != null) putExtra(EXTRA_PACKAGE, pkg)
+            if (apks != null) putExtra(EXTRA_APKS, apks)
         }
+
+    /** The APK files (base + splits) of a personal app. They are readable from inside the Space. */
+    fun apkPaths(ctx: Context, pkg: String): Array<String>? = try {
+        val ai = ctx.packageManager.getApplicationInfo(pkg, 0)
+        arrayOf(ai.sourceDir, *(ai.splitSourceDirs ?: emptyArray<String>()))
+    } catch (e: PackageManager.NameNotFoundException) {
+        null
+    }
+
+    /** SECURITY: only APK files inside Android's own app directories may be copied into the Space. */
+    fun isApkFile(f: File): Boolean =
+        f.name.endsWith(".apk") &&
+            (f.path.startsWith("/data/app/") || f.path.startsWith("/mnt/expand/")) &&
+            f.isFile && f.canRead()
 
     /** Cross-profile forwarding exists only once our Space is fully set up. */
     fun isForwardingReady(ctx: Context): Boolean =

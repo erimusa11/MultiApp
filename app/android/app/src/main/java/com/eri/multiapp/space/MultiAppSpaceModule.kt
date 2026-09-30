@@ -153,7 +153,8 @@ class MultiAppSpaceModule(private val ctx: ReactApplicationContext) : ReactConte
     }
 
     @ReactMethod
-    fun cloneApp(pkg: String, promise: Promise) = runInSpace(Space.ACTION_CLONE, pkg, promise)
+    fun cloneApp(pkg: String, promise: Promise) =
+        runInSpace(Space.ACTION_CLONE, pkg, promise, Space.apkPaths(ctx, pkg))
 
     @ReactMethod
     fun removeClone(pkg: String, promise: Promise) = runInSpace(Space.ACTION_REMOVE, pkg, promise)
@@ -330,12 +331,12 @@ class MultiAppSpaceModule(private val ctx: ReactApplicationContext) : ReactConte
 
     // ---------- Cross-profile plumbing ----------
 
-    private fun runInSpace(action: String, pkg: String?, promise: Promise) {
+    private fun runInSpace(action: String, pkg: String?, promise: Promise, apks: Array<String>? = null) {
         if (pkg != null && (!Space.isValidPackageName(pkg) || pkg == ctx.packageName)) {
             return promise.reject("E_INVALID", "Invalid app")
         }
         val activity = ctx.currentActivity ?: return promise.reject("E_NO_ACTIVITY", "App is not in foreground")
-        val intent = Space.spaceIntent(action, pkg)
+        val intent = Space.spaceIntent(action, pkg, apks)
         if (!Space.isForwardingReady(ctx)) {
             // A paused Space (work apps switched off) can't receive actions: wake it and say so.
             if (Space.state(ctx) == "paused") {

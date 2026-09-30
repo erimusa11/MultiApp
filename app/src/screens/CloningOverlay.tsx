@@ -101,7 +101,7 @@ export function CloningOverlay({
       : 'Couldn’t clone this app';
   const text =
     state.phase === 'working'
-      ? 'Creating a fresh, separate copy in your Clone Space.'
+      ? 'Creating a fresh, separate copy in your Clone Space. If Android asks, allow Multi-App and tap Install.'
       : state.phase === 'done'
       ? 'Open it and sign in with your other account.'
       : state.message;

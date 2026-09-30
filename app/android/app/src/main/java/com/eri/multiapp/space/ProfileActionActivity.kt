@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.IntentSender
 import android.content.pm.ApplicationInfo
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
@@ -13,7 +14,9 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.UserManager
 import androidx.core.content.ContextCompat
+import java.io.File
 
 /**
  * Lives inside the Clone Space. Disabled in the personal profile, enabled in the
@@ -22,7 +25,13 @@ import androidx.core.content.ContextCompat
  */
 class ProfileActionActivity : Activity() {
 
-    private var uninstallReceiver: BroadcastReceiver? = null
+    companion object {
+        private const val MAX_APKS = 64
+        private const val INSTALL_TIMEOUT_MS = 5 * 60_000L
+        private const val UNINSTALL_TIMEOUT_MS = 60_000L
+    }
+
+    private var statusReceiver: BroadcastReceiver? = null
     private val handler = Handler(Looper.getMainLooper())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -78,19 +87,73 @@ class ProfileActionActivity : Activity() {
         if (dpm.isApplicationHidden(admin, pkg)) dpm.setApplicationHidden(admin, pkg, false)
         if (isInstalledHere(pkg)) return ok()
 
-        var done = false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            done = try { dpm.installExistingPackage(admin, pkg) } catch (e: Exception) { false }
+        // System apps are already present but disabled in a new profile.
+        try {
+            dpm.enableSystemApp(admin, pkg)
+        } catch (_: Exception) {
         }
-        if (!done) {
-            // System apps are already present but disabled in a new profile.
+        if (isInstalledHere(pkg)) return ok()
+
+        // Only works when a device owner manages the phone (an "affiliated" Space),
+        // which personal phones never have. Cheap to try.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
             try {
-                dpm.enableSystemApp(admin, pkg)
-                done = isInstalledHere(pkg)
+                if (dpm.installExistingPackage(admin, pkg) && isInstalledHere(pkg)) return ok()
             } catch (_: Exception) {
             }
         }
-        if (done) ok() else fail("Android refused to clone this app.")
+
+        val paths = intent.getStringArrayExtra(Space.EXTRA_APKS) ?: return fail("Android refused to clone this app.")
+        installCopy(pkg, paths)
+    }
+
+    /** Regular apps: installs a copy of the original's APK files. Android asks the user to confirm. */
+    private fun installCopy(pkg: String, paths: Array<String>) {
+        // Some phones block installs in a new work profile; the Space is ours to allow them.
+        try {
+            dpm.clearUserRestriction(admin, UserManager.DISALLOW_INSTALL_UNKNOWN_SOURCES)
+        } catch (_: Exception) {
+        }
+        val installer = packageManager.packageInstaller
+        val sender = statusSender("$packageName.INSTALL_RESULT", pkg, "Install")
+        Thread {
+            var id = -1
+            try {
+                val apks = sourceApks(pkg, paths) ?: throw IllegalArgumentException("Couldn't read this app's files.")
+                val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
+                    setAppPackageName(pkg)
+                    setSize(apks.sumOf { it.length() })
+                }
+                id = installer.createSession(params)
+                installer.openSession(id).use { session ->
+                    for (apk in apks) {
+                        apk.inputStream().use { input ->
+                            session.openWrite(apk.name, 0, apk.length()).use { out ->
+                                input.copyTo(out, 1 shl 16)
+                                session.fsync(out)
+                            }
+                        }
+                    }
+                    session.commit(sender)
+                }
+            } catch (e: Exception) {
+                if (id != -1) try { installer.abandonSession(id) } catch (_: Exception) {}
+                handler.post { fail(e.message ?: "Couldn't copy this app.") }
+            }
+        }.start()
+
+        // Copying and confirming can take a while, but never leave the caller hanging.
+        handler.postDelayed({ if (!isFinishing) fail("Install timed out") }, INSTALL_TIMEOUT_MS)
+    }
+
+    /** SECURITY: only real APK files of the requested app, from Android's app directories. */
+    private fun sourceApks(pkg: String, paths: Array<String>): List<File>? {
+        if (paths.isEmpty() || paths.size > MAX_APKS) return null
+        val files = paths.map { File(it).canonicalFile }
+        if (!files.all(Space::isApkFile) || files.distinctBy { it.name }.size != files.size) return null
+        @Suppress("DEPRECATION")
+        val info = packageManager.getPackageArchiveInfo(files[0].path, 0)
+        return if (info?.packageName == pkg) files else null
     }
 
     private fun setHidden(pkg: String, hidden: Boolean) {
@@ -114,38 +177,42 @@ class ProfileActionActivity : Activity() {
             return ok()
         }
 
-        val action = "$packageName.UNINSTALL_RESULT"
+        packageManager.packageInstaller.uninstall(pkg, statusSender("$packageName.UNINSTALL_RESULT", pkg, "Uninstall"))
+
+        // Never leave the caller hanging.
+        handler.postDelayed({ if (!isFinishing) fail("Uninstall timed out") }, UNINSTALL_TIMEOUT_MS)
+    }
+
+    /** Listens for PackageInstaller's answer ([what] = "Install" / "Uninstall") and finishes with it. */
+    private fun statusSender(action: String, pkg: String, what: String): IntentSender {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context, intent: Intent) {
                 when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
                     PackageInstaller.STATUS_PENDING_USER_ACTION -> {
                         @Suppress("DEPRECATION")
                         val confirm = intent.getParcelableExtra<Intent>(Intent.EXTRA_INTENT)
-                        if (confirm != null && isSystemUninstallPrompt(confirm)) startActivity(confirm)
-                        else fail("Uninstall blocked")
+                        if (confirm != null && isSystemPrompt(confirm)) startActivity(confirm)
+                        else fail("$what blocked")
                     }
                     PackageInstaller.STATUS_SUCCESS -> ok()
-                    else -> fail(intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Uninstall failed")
+                    PackageInstaller.STATUS_FAILURE_ABORTED -> fail("$what cancelled")
+                    else -> fail(intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "$what failed")
                 }
             }
         }
-        uninstallReceiver = receiver
+        statusReceiver = receiver
         ContextCompat.registerReceiver(this, receiver, IntentFilter(action), ContextCompat.RECEIVER_NOT_EXPORTED)
 
         var flags = PendingIntent.FLAG_UPDATE_CURRENT
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) flags = flags or PendingIntent.FLAG_MUTABLE
-        val pi = PendingIntent.getBroadcast(this, pkg.hashCode(), Intent(action).setPackage(packageName), flags)
-        packageManager.packageInstaller.uninstall(pkg, pi.intentSender)
-
-        // Never leave the caller hanging.
-        handler.postDelayed({ if (!isFinishing) fail("Uninstall timed out") }, 60_000)
+        return PendingIntent.getBroadcast(this, pkg.hashCode(), Intent(action).setPackage(packageName), flags).intentSender
     }
 
     /**
-     * SECURITY: only relaunch the system uninstall confirmation, never an arbitrary
-     * intent (prevents intent redirection), and strip any URI grant flags.
+     * SECURITY: only relaunch the system install/uninstall confirmation, never an
+     * arbitrary intent (prevents intent redirection), and strip any URI grant flags.
      */
-    private fun isSystemUninstallPrompt(confirm: Intent): Boolean {
+    private fun isSystemPrompt(confirm: Intent): Boolean {
         confirm.flags = confirm.flags and
             (Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
                 Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION or Intent.FLAG_GRANT_PREFIX_URI_PERMISSION).inv()
@@ -170,7 +237,7 @@ class ProfileActionActivity : Activity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
-        uninstallReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
+        statusReceiver?.let { try { unregisterReceiver(it) } catch (_: Exception) {} }
         super.onDestroy()
     }
 }

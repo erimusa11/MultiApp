@@ -12,6 +12,8 @@
     <uses-permission android:name="com.eri.multiapp.permission.CONTROL_SPACE" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <!-- Used only inside the Clone Space, to install a copy of an app you picked. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="com.android.launcher.permission.INSTALL_SHORTCUT" />
 
     <!-- Android 11+ package visibility: see every launchable app so it can be cloned. -->
@@ -40,6 +42,14 @@
         </intent>
         <intent>
             <action android:name="com.eri.multiapp.action.DESTROY" />
+        </intent>
+        <!-- The system installer, whose confirm screens we relaunch after checking them. -->
+        <intent>
+            <action android:name="android.content.pm.action.CONFIRM_INSTALL" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.UNINSTALL_PACKAGE" />
+            <data android:scheme="package" />
         </intent>
     </queries>
 
