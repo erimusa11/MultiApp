@@ -1,0 +1,13 @@
+# EAS reads this file from the repo root. Never upload local build output,
+# machine-specific caches or finished APKs.
+node_modules/
+**/node_modules/
+**/build/
+**/.gradle/
+**/.cxx/
+**/.idea/
+**/local.properties
+*.apk
+*.aab
+Buld apk/
+.git/
